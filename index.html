@@ -43,7 +43,7 @@
     #invertBtn { bottom: 22px; left: 22px; }
     #resetBtn  { bottom: 22px; right: 22px; }
 
-    /* ── Light theme overrides ───────────────────────────────────── */
+    /* ── Light theme ─────────────────────────────────────────────── */
     body.light { background: #fff; }
     body.light .btn {
       border-color: rgba(0,0,0,0.45);
@@ -53,18 +53,13 @@
 
     /* ── Loading indicator ───────────────────────────────────────── */
     #loader {
-      position: fixed;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      pointer-events: none;
-      z-index: 5;
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none; z-index: 5;
     }
     #loader span {
       font-family: system-ui, sans-serif;
-      font-size: 12px;
-      letter-spacing: .12em;
+      font-size: 12px; letter-spacing: .12em;
       color: rgba(255,255,255,.35);
       text-transform: uppercase;
     }
@@ -77,24 +72,22 @@
 
   <div id="loader"><span>loading</span></div>
 
-  <!-- Invert: half-circle icon -->
+  <!-- Invert: half-circle -->
   <button class="btn" id="invertBtn" aria-label="Invert colors">
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none"
-         xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="9" cy="9" r="7.5" stroke="currentColor" stroke-width="1"/>
       <path d="M9 1.5 A7.5 7.5 0 0 1 9 16.5 Z" fill="currentColor"/>
     </svg>
   </button>
 
-  <!-- Reset: crosshair / target icon -->
+  <!-- Reset: crosshair -->
   <button class="btn" id="resetBtn" aria-label="Reset orientation">
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none"
-         xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="9" cy="9" r="7.5" stroke="currentColor" stroke-width="1"/>
       <circle cx="9" cy="9" r="2"   stroke="currentColor" stroke-width="1"/>
       <line x1="9" y1="1.5"  x2="9" y2="5.5"  stroke="currentColor" stroke-width="1"/>
       <line x1="9" y1="12.5" x2="9" y2="16.5" stroke="currentColor" stroke-width="1"/>
-      <line x1="1.5" y1="9"  x2="5.5" y2="9"  stroke="currentColor" stroke-width="1"/>
+      <line x1="1.5"  y1="9" x2="5.5"  y2="9" stroke="currentColor" stroke-width="1"/>
       <line x1="12.5" y1="9" x2="16.5" y2="9" stroke="currentColor" stroke-width="1"/>
     </svg>
   </button>
@@ -102,17 +95,17 @@
 <script type="module">
 /* ═══════════════════════════════════════════════════════════════════════════
    Interactive Wireframe Globe
-   – Three.js r160, world-atlas 2, topojson-client 3
+   Three.js r160 · world-atlas 2 · topojson-client 3
    ═══════════════════════════════════════════════════════════════════════════ */
 
-import * as THREE         from 'https://esm.sh/three@0.160.0';
-import { feature, mesh }  from 'https://esm.sh/topojson-client@3';
+import * as THREE        from 'https://esm.sh/three@0.160.0';
+import { mesh }          from 'https://esm.sh/topojson-client@3';
 
-// ── Constants ────────────────────────────────────────────────────────────────
-const GLOBE_R  = 1;          // world-space globe radius
-const LINE_R   = 1.002;      // lines sit just above sphere surface
-const FOV      = 45;         // vertical field-of-view (degrees)
-const ZOOM_MAX = 2.0;        // 2× enlarge max
+// ── Config ───────────────────────────────────────────────────────────────────
+const GLOBE_R  = 1;       // globe radius in world units
+const LINE_R   = 1.002;   // lines sit just above sphere surface
+const FOV      = 45;      // vertical field-of-view, degrees
+const ZOOM_MAX = 3.0;     // 3× enlarged max
 const fovRad   = FOV * (Math.PI / 180);
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -126,207 +119,213 @@ scene.background = new THREE.Color(0x000000);
 
 const camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 200);
 
-// ── Globe group (rotates) ────────────────────────────────────────────────────
+// ── Globe group (rotates with user input) ────────────────────────────────────
 const globe = new THREE.Group();
 scene.add(globe);
 
-// Opaque sphere — black fill; depth buffer hides back-side lines
+// Opaque sphere — fills the globe and occludes back-side geometry via depth
 const sphereMat  = new THREE.MeshBasicMaterial({ color: 0x000000 });
 const sphereMesh = new THREE.Mesh(
-  new THREE.SphereGeometry(GLOBE_R, 72, 72),
-  sphereMat
+  new THREE.SphereGeometry(GLOBE_R, 72, 72), sphereMat
 );
 sphereMesh.renderOrder = 0;
 globe.add(sphereMesh);
 
-// ── Line materials ───────────────────────────────────────────────────────────
+// Shared border line material
 const borderMat = new THREE.LineBasicMaterial({ color: 0xffffff });
 
-// Silhouette ring — drawn without depth test so it always shows on top
+// ── Silhouette ring (always faces camera; not in globe group) ────────────────
+// Unit circle in XY plane — scaled/positioned each frame to match exact silhouette.
 const outlineMat = new THREE.LineBasicMaterial({
-  color:      0xffffff,
-  depthTest:  false,
-  depthWrite: false,
+  color: 0xffffff, depthTest: false, depthWrite: false,
 });
-
-// ── Silhouette ring geometry (unit circle in XY plane) ───────────────────────
-const OUTLINE_SEGS = 256;
-const outlinePts   = new Float32Array((OUTLINE_SEGS + 1) * 3);
-for (let i = 0; i <= OUTLINE_SEGS; i++) {
-  const a = (i / OUTLINE_SEGS) * Math.PI * 2;
-  outlinePts[i * 3]     = Math.cos(a);
-  outlinePts[i * 3 + 1] = Math.sin(a);
-  outlinePts[i * 3 + 2] = 0;
+const outlinePts = new Float32Array((257) * 3);
+for (let i = 0; i <= 256; i++) {
+  const a = (i / 256) * Math.PI * 2;
+  outlinePts[i * 3] = Math.cos(a); outlinePts[i * 3 + 1] = Math.sin(a);
 }
 const outlineGeo  = new THREE.BufferGeometry();
 outlineGeo.setAttribute('position', new THREE.Float32BufferAttribute(outlinePts, 3));
 const outlineRing = new THREE.LineLoop(outlineGeo, outlineMat);
-outlineRing.renderOrder = 10;   // always on top
-scene.add(outlineRing);          // NOT in globe group — doesn't rotate
+outlineRing.renderOrder = 10;
+scene.add(outlineRing);  // NOT in globe — doesn't rotate
 
-// ── Coordinate conversion ────────────────────────────────────────────────────
-// Standard geographic → 3D:
-//   lon=0   → +Z axis (faces camera by default)
-//   lat=90  → +Y axis (north up)
-//   lon=90  → +X axis (east = right)
+// ── Coordinate helpers ───────────────────────────────────────────────────────
+// lat/lon → 3-D point on sphere of radius r.
+// Convention: lon=0 → +Z (faces camera at default), lat=90 → +Y (north up).
 function ll3(lat, lon, r) {
-  const phi    = lat * (Math.PI / 180);
-  const lambda = lon * (Math.PI / 180);
-  return [
-    r * Math.cos(phi) * Math.sin(lambda),
-    r * Math.sin(phi),
-    r * Math.cos(phi) * Math.cos(lambda),
-  ];
+  const φ = lat * (Math.PI / 180);
+  const λ = lon * (Math.PI / 180);
+  return [r * Math.cos(φ) * Math.sin(λ),
+          r * Math.sin(φ),
+          r * Math.cos(φ) * Math.cos(λ)];
 }
 
 // ── Geography loader ─────────────────────────────────────────────────────────
-let borderLines = null;
-
 async function loadData() {
   const res  = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
   const topo = await res.json();
 
-  // All line segments collected into one flat array → single LineSegments draw call
-  const verts = [];
+  // mesh() with no filter → ALL arcs (coastlines + country borders), each exactly once.
+  // This produces correct outlines for every landmass and every country.
+  const lines = mesh(topo, topo.objects.countries);  // → MultiLineString geometry
 
-  function addRing(coords) {
-    for (let i = 0; i < coords.length - 1; i++) {
-      const [ax, ay, az] = ll3(coords[i][1],     coords[i][0],     LINE_R);
-      const [bx, by, bz] = ll3(coords[i+1][1],   coords[i+1][0],   LINE_R);
+  const verts = [];
+  for (const ring of lines.coordinates) {
+    for (let i = 0; i < ring.length - 1; i++) {
+      const [ax, ay, az] = ll3(ring[i][1],   ring[i][0],   LINE_R);
+      const [bx, by, bz] = ll3(ring[i+1][1], ring[i+1][0], LINE_R);
       verts.push(ax, ay, az, bx, by, bz);
     }
   }
 
-  function addGeom(geom) {
-    if (!geom) return;
-    switch (geom.type) {
-      case 'Polygon':         geom.coordinates.forEach(addRing); break;
-      case 'MultiPolygon':    geom.coordinates.forEach(p => p.forEach(addRing)); break;
-      case 'LineString':      addRing(geom.coordinates); break;
-      case 'MultiLineString': geom.coordinates.forEach(addRing); break;
-    }
-  }
-
-  // 1. Land boundary → coastlines (outer outline of merged land mass)
-  const land = feature(topo, topo.objects.land);
-  addGeom(land.geometry);
-
-  // 2. Country-to-country borders only (no coastline duplication)
-  const borders = mesh(topo, topo.objects.countries, (a, b) => a !== b);
-  addGeom(borders);
-
-  // Build merged geometry
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
-  borderLines = new THREE.LineSegments(geo, borderMat);
-  borderLines.renderOrder = 1;
-  globe.add(borderLines);
+  const lineSegs = new THREE.LineSegments(geo, borderMat);
+  lineSegs.renderOrder = 1;
+  globe.add(lineSegs);
 
   document.getElementById('loader').classList.add('hidden');
 }
 
-// ── Camera-distance helpers ──────────────────────────────────────────────────
+// ── Camera distance ───────────────────────────────────────────────────────────
+// Portrait  → globe diameter = 2/3 × screen width.
+// Landscape → globe diameter = 2/3 × screen height.
+// screen_diam = GLOBE_R × innerHeight / (camZ × tan(fov/2))
+// ⇒ camZ = GLOBE_R × innerHeight / (tan(fov/2) × refDiam)
 function calcDefaultZ() {
-  // Portrait  → globe diameter = 2/3 × screen width
-  // Landscape → globe diameter = 2/3 × screen height
   const portrait = innerHeight > innerWidth;
-  const refDiam  = portrait ? innerWidth * (2 / 3) : innerHeight * (2 / 3);
-  // screen_radius = GLOBE_R / camZ * (innerHeight / (2·tan(fov/2)))
-  // camZ = GLOBE_R × innerHeight / (tan(fov/2) × refDiam/2 × ... hmm:
-  // screen_diam_px = 2·GLOBE_R / camZ × innerHeight / (2·tan(fov/2))
-  //               = GLOBE_R × innerHeight / (camZ × tan(fov/2))
-  // camZ = GLOBE_R × innerHeight / (tan(fov/2) × refDiam)
+  const refDiam  = portrait ? innerWidth * (2/3) : innerHeight * (2/3);
   return GLOBE_R * innerHeight / (Math.tan(fovRad / 2) * refDiam);
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
 let defZ = calcDefaultZ();
-let tgtZ = defZ;
-let curZ = defZ;
+let tgtZ = defZ, curZ = defZ;
+camera.position.z = curZ;
 
-const globeQ   = new THREE.Quaternion();  // current globe orientation
-const identQ   = new THREE.Quaternion();  // identity (north-up default)
+const globeQ       = new THREE.Quaternion();   // current globe orientation
+let resetTargetQ   = new THREE.Quaternion();   // computed smart-reset target
+let resetting      = false, resetT = 0;
+let resetFromQ     = new THREE.Quaternion();
+let resetFromZ     = defZ;
 
-// Reset animation
-let resetting  = false;
-let resetT     = 0;
-let resetFromQ = new THREE.Quaternion();
-let resetFromZ = defZ;
-
-// Drag state
-let dragging   = false;
+let dragging       = false;
 let dragPx = 0, dragPy = 0;
 
-// Pinch state
-let pinchDist0 = 0;
-let pinchZ0    = defZ;
+let pinchDist0  = 0, pinchAngle0 = 0, pinchZ0 = defZ;
 
-// Theme
 let isLight = false;
 
 // ── Zoom clamp ───────────────────────────────────────────────────────────────
-function clampTgtZ() {
-  const minZ = defZ / ZOOM_MAX;  // camera close → globe 2× bigger
-  const maxZ = defZ;             // camera at default → globe at 2/3 size
-  tgtZ = Math.max(minZ, Math.min(maxZ, tgtZ));
+function clampZ() {
+  tgtZ = Math.max(defZ / ZOOM_MAX, Math.min(defZ, tgtZ));
 }
 
-// ── Drag rotation ────────────────────────────────────────────────────────────
-const _qY = new THREE.Quaternion();
-const _qX = new THREE.Quaternion();
-const _axisY = new THREE.Vector3(0, 1, 0);
-const _axisX = new THREE.Vector3(1, 0, 0);
+// ── Rotation helpers ─────────────────────────────────────────────────────────
+const _qX   = new THREE.Quaternion();
+const _qY   = new THREE.Quaternion();
+const _qZ   = new THREE.Quaternion();
+const _axX  = new THREE.Vector3(1, 0, 0);
+const _axY  = new THREE.Vector3(0, 1, 0);
+const _axZ  = new THREE.Vector3(0, 0, 1);
 
+// Drag: rotate globe around world X and Y axes.
+// Sensitivity: dragging half the screen ≈ 180°.
 function applyDrag(dx, dy) {
-  // Sensitivity: half-screen drag ≈ 180° rotation
   const s = Math.PI / Math.min(innerWidth, innerHeight);
-  _qY.setFromAxisAngle(_axisY,  dx * s);
-  _qX.setFromAxisAngle(_axisX,  dy * s);
-  // Premultiply in world space (axes remain fixed regardless of globe orientation)
+  _qY.setFromAxisAngle(_axY,  dx * s);
+  _qX.setFromAxisAngle(_axX,  dy * s);
+  // premultiply = apply in world space (axes stay fixed regardless of globe orientation)
   globeQ.premultiply(_qY).premultiply(_qX);
   globe.quaternion.copy(globeQ);
 }
 
-// ── Touch distance ───────────────────────────────────────────────────────────
-function touchDist(e) {
-  const dx = e.touches[0].clientX - e.touches[1].clientX;
-  const dy = e.touches[0].clientY - e.touches[1].clientY;
-  return Math.hypot(dx, dy);
+// Twist: rotate globe around world Z axis (the "into screen" axis).
+// Produces the same feel as rotating a photo on iOS.
+function applyTwist(dAngle) {
+  _qZ.setFromAxisAngle(_axZ, -dAngle);   // negate: screen-CW → world-CCW
+  globeQ.premultiply(_qZ);
+  globe.quaternion.copy(globeQ);
 }
 
-// ── Events — mouse ───────────────────────────────────────────────────────────
+// ── Touch geometry helpers ───────────────────────────────────────────────────
+function touchDist(e) {
+  return Math.hypot(
+    e.touches[0].clientX - e.touches[1].clientX,
+    e.touches[0].clientY - e.touches[1].clientY
+  );
+}
+function touchAngle(e) {
+  return Math.atan2(
+    e.touches[1].clientY - e.touches[0].clientY,
+    e.touches[1].clientX - e.touches[0].clientX
+  );
+}
+function angleDelta(a, b) {
+  // Shortest signed difference between two atan2 angles
+  let d = a - b;
+  if (d >  Math.PI) d -= 2 * Math.PI;
+  if (d < -Math.PI) d += 2 * Math.PI;
+  return d;
+}
+
+// ── Smart-reset target ───────────────────────────────────────────────────────
+// Returns the quaternion that:
+//   1. Keeps the currently-viewed region facing the camera (+Z world),
+//   2. Rotates north (+Y local) as close to "up" (+Y world) as possible.
+function computeSmartResetQ() {
+  // Direction in globe-local space currently pointing toward camera (+Z world)
+  const localFwd = new THREE.Vector3(0, 0, 1)
+    .applyQuaternion(new THREE.Quaternion().copy(globeQ).invert());
+
+  // q1: rotation that brings localFwd to +Z world, with arbitrary roll
+  const q1 = new THREE.Quaternion().setFromUnitVectors(
+    localFwd.normalize(), new THREE.Vector3(0, 0, 1)
+  );
+
+  // Where does north (+Y local) point after q1?
+  const northAfterQ1 = new THREE.Vector3(0, 1, 0).applyQuaternion(q1);
+
+  // Find the Z-axis roll angle that maximises the Y component of north.
+  // Maximise: nx·sin(θ) + ny·cos(θ)  →  θ_opt = atan2(nx, ny)
+  const theta = Math.atan2(northAfterQ1.x, northAfterQ1.y);
+  const qZ    = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), theta);
+
+  // Combined: apply q1 first, then qZ (qZ * q1 in left-to-right notation)
+  return new THREE.Quaternion().multiplyQuaternions(qZ, q1);
+}
+
+// ── Events: mouse ────────────────────────────────────────────────────────────
 canvas.addEventListener('mousedown', e => {
-  dragging   = true;
-  resetting  = false;
-  dragPx = e.clientX;
-  dragPy = e.clientY;
+  dragging = true; resetting = false;
+  dragPx = e.clientX; dragPy = e.clientY;
 });
 window.addEventListener('mousemove', e => {
   if (!dragging) return;
   applyDrag(e.clientX - dragPx, e.clientY - dragPy);
-  dragPx = e.clientX;
-  dragPy = e.clientY;
+  dragPx = e.clientX; dragPy = e.clientY;
 });
 window.addEventListener('mouseup', () => { dragging = false; });
 
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
-  // deltaY > 0 = scroll down = zoom out (increase camZ)
   tgtZ *= 1 + e.deltaY * 0.001;
-  clampTgtZ();
+  clampZ();
 }, { passive: false });
 
-// ── Events — touch ───────────────────────────────────────────────────────────
+// ── Events: touch ────────────────────────────────────────────────────────────
 canvas.addEventListener('touchstart', e => {
   resetting = false;
   if (e.touches.length === 1) {
-    dragging = true;
-    dragPx = e.touches[0].clientX;
-    dragPy = e.touches[0].clientY;
+    dragging    = true;
+    dragPx      = e.touches[0].clientX;
+    dragPy      = e.touches[0].clientY;
   } else if (e.touches.length === 2) {
-    dragging   = false;
-    pinchDist0 = touchDist(e);
-    pinchZ0    = curZ;
+    dragging    = false;
+    pinchDist0  = touchDist(e);
+    pinchAngle0 = touchAngle(e);
+    pinchZ0     = curZ;
   }
 }, { passive: true });
 
@@ -337,15 +336,29 @@ canvas.addEventListener('touchmove', e => {
     dragPx = e.touches[0].clientX;
     dragPy = e.touches[0].clientY;
   } else if (e.touches.length === 2 && pinchDist0 > 0) {
-    // Pinch: scale camera distance inversely with finger spread
-    tgtZ = pinchZ0 * (pinchDist0 / touchDist(e));
-    clampTgtZ();
+    const dist  = touchDist(e);
+    const angle = touchAngle(e);
+
+    // Zoom (pinch distance)
+    tgtZ = pinchZ0 * (pinchDist0 / dist);
+    clampZ();
+
+    // Twist (finger rotation)
+    const dAngle = angleDelta(angle, pinchAngle0);
+    applyTwist(dAngle);
+    pinchAngle0 = angle;
   }
 }, { passive: false });
 
 canvas.addEventListener('touchend', e => {
   if (e.touches.length === 0) { dragging = false; }
   if (e.touches.length < 2)   { pinchDist0 = 0; }
+  // If one finger lifts during pinch, resume single-finger drag
+  if (e.touches.length === 1) {
+    dragging = true;
+    dragPx   = e.touches[0].clientX;
+    dragPy   = e.touches[0].clientY;
+  }
 }, { passive: true });
 
 // ── Buttons ──────────────────────────────────────────────────────────────────
@@ -354,7 +367,7 @@ document.getElementById('invertBtn').addEventListener('click', () => {
   document.body.classList.toggle('light', isLight);
   const bg = isLight ? 0xffffff : 0x000000;
   const fg = isLight ? 0x000000 : 0xffffff;
-  scene.background  = new THREE.Color(bg);
+  scene.background = new THREE.Color(bg);
   sphereMat.color.set(bg);
   borderMat.color.set(fg);
   outlineMat.color.set(fg);
@@ -362,11 +375,12 @@ document.getElementById('invertBtn').addEventListener('click', () => {
 
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (resetting) return;
-  resetting  = true;
-  resetT     = 0;
+  resetTargetQ = computeSmartResetQ();
+  resetting    = true;
+  resetT       = 0;
   resetFromQ.copy(globeQ);
-  resetFromZ = curZ;
-  dragging   = false;
+  resetFromZ   = curZ;
+  dragging     = false;
 });
 
 // ── Resize ───────────────────────────────────────────────────────────────────
@@ -375,9 +389,7 @@ function onResize() {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   defZ = calcDefaultZ();
-  // Reset to default zoom on resize (handles orientation changes gracefully)
-  tgtZ = defZ;
-  curZ = defZ;
+  tgtZ = defZ; curZ = defZ;
   camera.position.z = curZ;
 }
 window.addEventListener('resize', onResize);
@@ -391,42 +403,37 @@ function easeInOutCubic(t) {
 function tick() {
   requestAnimationFrame(tick);
 
-  // ── Reset animation ──────────────────────────────────────────────────────
   if (resetting) {
-    resetT = Math.min(1, resetT + 0.022);  // ~45-frame duration at 60fps
+    resetT = Math.min(1, resetT + 0.022);   // ~45 frames at 60 fps
     const t = easeInOutCubic(resetT);
-    globe.quaternion.slerpQuaternions(resetFromQ, identQ, t);
+    globe.quaternion.slerpQuaternions(resetFromQ, resetTargetQ, t);
     globeQ.copy(globe.quaternion);
-    // Directly drive curZ during animation (bypass smooth-zoom for synchrony)
     curZ = resetFromZ + (defZ - resetFromZ) * t;
     tgtZ = curZ;
     if (resetT >= 1) resetting = false;
   } else {
-    // Smooth zoom
     curZ += (tgtZ - curZ) * 0.12;
   }
 
   camera.position.z = curZ;
 
-  // ── Silhouette ring update ───────────────────────────────────────────────
-  // For sphere of radius R at origin, camera at z=d along +Z:
-  //   silhouette plane z  = R² / d
-  //   silhouette radius   = √(R² − (R²/d)²)
+  // Exact silhouette ring:
+  //   sphere radius R, camera at z=d →  silhouette at z = R²/d,  radius = √(R² − (R²/d)²)
   {
     const d  = curZ;
     const zs = (GLOBE_R * GLOBE_R) / d;
     const rs = Math.sqrt(Math.max(0, GLOBE_R * GLOBE_R - zs * zs));
-    outlineRing.position.z = zs + 0.002;   // micro-offset toward camera
+    outlineRing.position.z = zs + 0.002;
     outlineRing.scale.set(rs, rs, 1);
   }
 
   renderer.render(scene, camera);
 }
 
-// ── Bootstrap ─────────────────────────────────────────────────────────────────
+// ── Bootstrap ────────────────────────────────────────────────────────────────
 onResize();
 loadData().catch(err => {
-  console.error('Failed to load globe data:', err);
+  console.error('Globe data load failed:', err);
   document.getElementById('loader').classList.add('hidden');
 });
 tick();
