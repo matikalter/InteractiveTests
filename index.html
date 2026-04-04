@@ -213,6 +213,10 @@ let resetFromZ     = defZ;
 let dragging       = false;
 let dragPx = 0, dragPy = 0;
 
+// Inertia: smoothed drag velocity (screen px/frame) + damping factor
+let velDx = 0, velDy = 0;
+const DAMPING = 0.85;   // per-frame friction; globe coasts ~0.5 s before stopping
+
 let pinchDist0  = 0, pinchAngle0 = 0, pinchZ0 = defZ;
 
 let isLight = false;
@@ -301,11 +305,15 @@ function computeSmartResetQ() {
 // ── Events: mouse ────────────────────────────────────────────────────────────
 canvas.addEventListener('mousedown', e => {
   dragging = true; resetting = false;
+  velDx = velDy = 0;
   dragPx = e.clientX; dragPy = e.clientY;
 });
 window.addEventListener('mousemove', e => {
   if (!dragging) return;
-  applyDrag(e.clientX - dragPx, e.clientY - dragPy);
+  const dx = e.clientX - dragPx, dy = e.clientY - dragPy;
+  velDx = velDx * 0.6 + dx * 0.4;   // exponential smoothing → stable release velocity
+  velDy = velDy * 0.6 + dy * 0.4;
+  applyDrag(dx, dy);
   dragPx = e.clientX; dragPy = e.clientY;
 });
 window.addEventListener('mouseup', () => { dragging = false; });
@@ -321,10 +329,12 @@ canvas.addEventListener('touchstart', e => {
   resetting = false;
   if (e.touches.length === 1) {
     dragging    = true;
+    velDx = velDy = 0;
     dragPx      = e.touches[0].clientX;
     dragPy      = e.touches[0].clientY;
   } else if (e.touches.length === 2) {
     dragging    = false;
+    velDx = velDy = 0;   // cancel any inertia when pinch starts
     pinchDist0  = touchDist(e);
     pinchAngle0 = touchAngle(e);
     pinchZ0     = curZ;
@@ -334,7 +344,10 @@ canvas.addEventListener('touchstart', e => {
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
   if (e.touches.length === 1 && dragging) {
-    applyDrag(e.touches[0].clientX - dragPx, e.touches[0].clientY - dragPy);
+    const dx = e.touches[0].clientX - dragPx, dy = e.touches[0].clientY - dragPy;
+    velDx = velDx * 0.6 + dx * 0.4;
+    velDy = velDy * 0.6 + dy * 0.4;
+    applyDrag(dx, dy);
     dragPx = e.touches[0].clientX;
     dragPy = e.touches[0].clientY;
   } else if (e.touches.length === 2 && pinchDist0 > 0) {
@@ -355,9 +368,10 @@ canvas.addEventListener('touchmove', e => {
 canvas.addEventListener('touchend', e => {
   if (e.touches.length === 0) { dragging = false; }
   if (e.touches.length < 2)   { pinchDist0 = 0; }
-  // If one finger lifts during pinch, resume single-finger drag
+  // If one finger lifts during pinch, resume single-finger drag (fresh — no inertia carry-over)
   if (e.touches.length === 1) {
     dragging = true;
+    velDx = velDy = 0;
     dragPx   = e.touches[0].clientX;
     dragPy   = e.touches[0].clientY;
   }
@@ -377,6 +391,7 @@ document.getElementById('invertBtn').addEventListener('click', () => {
 
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (resetting) return;
+  velDx = velDy = 0;
   resetTargetQ = computeSmartResetQ();
   resetting    = true;
   resetT       = 0;
@@ -415,6 +430,17 @@ function tick() {
     if (resetT >= 1) resetting = false;
   } else {
     curZ += (tgtZ - curZ) * 0.12;
+
+    // Inertia: coast after finger/mouse release, zoom-scaled like live drag
+    if (!dragging && (Math.abs(velDx) + Math.abs(velDy) > 0.05)) {
+      const s = (Math.PI / Math.min(innerWidth, innerHeight)) * (curZ / defZ);
+      _qY.setFromAxisAngle(_axY, velDx * s);
+      _qX.setFromAxisAngle(_axX, velDy * s);
+      globeQ.premultiply(_qY).premultiply(_qX);
+      globe.quaternion.copy(globeQ);
+      velDx *= DAMPING;
+      velDy *= DAMPING;
+    }
   }
 
   camera.position.z = curZ;
