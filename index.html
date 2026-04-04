@@ -231,9 +231,11 @@ const _axY  = new THREE.Vector3(0, 1, 0);
 const _axZ  = new THREE.Vector3(0, 0, 1);
 
 // Drag: rotate globe around world X and Y axes.
-// Sensitivity: dragging half the screen ≈ 180°.
+// Sensitivity: dragging half the screen ≈ 180° at default zoom.
+// Scale by curZ/defZ so zooming in slows the rotation proportionally —
+// at 3× zoom a drag covers 1/3 the angular distance, keeping feel consistent.
 function applyDrag(dx, dy) {
-  const s = Math.PI / Math.min(innerWidth, innerHeight);
+  const s = (Math.PI / Math.min(innerWidth, innerHeight)) * (curZ / defZ);
   _qY.setFromAxisAngle(_axY,  dx * s);
   _qX.setFromAxisAngle(_axX,  dy * s);
   // premultiply = apply in world space (axes stay fixed regardless of globe orientation)
