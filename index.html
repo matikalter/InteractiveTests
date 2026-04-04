@@ -6,7 +6,7 @@
   <title>Globe</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -66,6 +66,23 @@
     }
     .species-label.visible { opacity: 1; }
 
+    /* ── Info box ────────────────────────────────────────────────────── */
+    #info-box {
+      position: fixed;
+      top: 22px;
+      left: 22px;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 11px;
+      line-height: 1.6;
+      letter-spacing: 0.03em;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .25s;
+      max-width: 200px; /* overridden dynamically by JS */
+    }
+    #info-box.visible { opacity: 1; }
+    #info-name { font-weight: 600; }
+
     /* ── Light theme ─────────────────────────────────────────────────── */
     body.light { background: #fff; }
     body.light #invertBtn,
@@ -94,6 +111,7 @@
 <body>
   <canvas id="c"></canvas>
   <div id="loader"><span>loading</span></div>
+  <div id="info-box"><strong id="info-name"></strong><span id="info-sep"> — </span><span id="info-desc"></span></div>
 
   <!-- ── Left column: cockroach species rows (rank 1 top → rank 4 bottom) ── -->
 
@@ -181,6 +199,14 @@ const DOT_R    = 1.005;
 const FOV      = 45;
 const ZOOM_MAX = 4.0;
 const fovRad   = FOV * (Math.PI / 180);
+
+// ── Species info ─────────────────────────────────────────────────────────────
+const SPECIES_INFO = {
+  german:      { common: 'German Cockroach',       desc: 'The most widespread indoor cockroach worldwide. Thrives in warm, humid environments near food and moisture. Responsible for most household infestations across every continent.' },
+  american:    { common: 'American Cockroach',     desc: 'The largest common house-infesting species. Originally from Africa, now found globally in sewers, basements, and warm buildings. Fast-moving and capable of short gliding flight.' },
+  oriental:    { common: 'Oriental Cockroach',     desc: 'Often called the "black beetle." Prefers cool, damp conditions and is common in basements, drains, and leaf litter. Less heat-tolerant than other pest species.' },
+  brownbanded: { common: 'Brown-banded Cockroach', desc: 'Identified by light bands across its wings. Favours warm, dry areas high up in rooms and inside furniture. Spreads easily through infested goods and electronics.' },
+};
 
 // ── Species ───────────────────────────────────────────────────────────────────
 const SPECIES = [
@@ -271,7 +297,7 @@ function ll3(lat, lon, r) {
 
 // ── Geography loader ──────────────────────────────────────────────────────────
 async function loadGeo() {
-  const res  = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+  const res  = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json');
   const topo = await res.json();
   const lines = mesh(topo, topo.objects.countries);
   const verts = [];
@@ -345,10 +371,8 @@ async function refreshFromGBIF(silent = false) {
   }
 }
 
-// ── Species selection (independent per-species toggle) ───────────────────────
-function selectSpecies(key) {
-  activeKeys.has(key) ? activeKeys.delete(key) : activeKeys.add(key);
-
+// ── Species selection ─────────────────────────────────────────────────────────
+function syncSpeciesUI() {
   for (const sp of SPECIES) {
     const active = activeKeys.has(sp.key);
     if (dotLayers[sp.key]) dotLayers[sp.key].visible = active;
@@ -356,15 +380,85 @@ function selectSpecies(key) {
     document.getElementById(`label-${sp.key}`).classList.toggle('visible', active);
   }
 }
+function selectSpecies(key) {
+  activeKeys.has(key) ? activeKeys.delete(key) : activeKeys.add(key);
+  syncSpeciesUI();
+}
 
-// Initialise button colors + click handlers
+// ── Info box ──────────────────────────────────────────────────────────────────
+const infoBox  = document.getElementById('info-box');
+const infoName = document.getElementById('info-name');
+const infoDesc = document.getElementById('info-desc');
+
+function showInfo(key) {
+  const sp   = SPECIES.find(s => s.key === key);
+  const info = SPECIES_INFO[key];
+  infoName.textContent = info.common;
+  infoDesc.textContent = info.desc;
+  infoBox.style.color  = sp.color;
+  updateInfoBoxWidth();
+  infoBox.classList.add('visible');
+}
+function hideInfo() {
+  infoBox.classList.remove('visible');
+}
+function updateInfoBoxWidth() {
+  const portrait     = innerHeight > innerWidth;
+  const globeScreenR = (portrait ? innerWidth : innerHeight) / 3;
+  const globeLeft    = innerWidth / 2 - globeScreenR;
+  const isCoarse     = window.matchMedia('(pointer: coarse)').matches;
+  if (isCoarse) {
+    // Mobile: same horizontal extent as the button column
+    const row = document.querySelector('.roach-row');
+    infoBox.style.maxWidth = (row ? row.offsetWidth : Math.floor(globeLeft * 2/3)) + 'px';
+  } else {
+    // Desktop: 2/3 of distance from left edge to globe left edge
+    infoBox.style.maxWidth = Math.max(80, Math.floor(globeLeft * 2/3)) + 'px';
+  }
+}
+
+// ── Button init: colors + desktop hover + mobile long-press ──────────────────
 for (const sp of SPECIES) {
   const btn = document.getElementById(`btn-${sp.key}`);
   const lbl = document.getElementById(`label-${sp.key}`);
+  const row = document.getElementById(`row-${sp.key}`);
   btn.style.borderColor = sp.color;
   btn.style.color       = sp.color;
   lbl.style.color       = sp.color;
+
+  // Desktop: hover on row shows info box; click toggles species
+  row.addEventListener('mouseenter', () => showInfo(sp.key));
+  row.addEventListener('mouseleave', hideInfo);
   btn.addEventListener('click', () => selectSpecies(sp.key));
+
+  // Mobile: long-press (400 ms) shows info, tap toggles species
+  let pressTimer = null, pressX = 0, pressY = 0, wasLong = false;
+
+  row.addEventListener('touchstart', e => {
+    wasLong = false;
+    pressX  = e.touches[0].clientX;
+    pressY  = e.touches[0].clientY;
+    pressTimer = setTimeout(() => {
+      wasLong = true;
+      showInfo(sp.key);
+      if (!activeKeys.has(sp.key)) { activeKeys.add(sp.key); syncSpeciesUI(); }
+    }, 400);
+  }, { passive: true });
+
+  row.addEventListener('touchmove', e => {
+    if (pressTimer &&
+        (Math.abs(e.touches[0].clientX - pressX) > 8 ||
+         Math.abs(e.touches[0].clientY - pressY) > 8)) {
+      clearTimeout(pressTimer); pressTimer = null;
+    }
+  }, { passive: true });
+
+  row.addEventListener('touchend', e => {
+    if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+    if (wasLong) { hideInfo(); }
+    else         { selectSpecies(sp.key); }
+    e.preventDefault(); // block ghost click
+  });
 }
 
 // ── Camera distance ───────────────────────────────────────────────────────────
@@ -491,6 +585,7 @@ function onResize() {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   defZ = calcDefaultZ(); tgtZ = defZ; curZ = defZ; camera.position.z = curZ;
+  updateInfoBoxWidth();
 }
 window.addEventListener('resize', onResize);
 
