@@ -59,12 +59,18 @@
       font-style: italic;
       letter-spacing: 0.03em;
       white-space: nowrap;
-      pointer-events: none;
+      pointer-events: none;           /* ignore events when invisible */
+      user-select: none;              /* prevent text selection on long-press */
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;    /* suppress iOS copy/paste popover */
       opacity: 0;
       transition: opacity .25s;
       /* color set by JS to match species */
     }
-    .species-label.visible { opacity: 1; }
+    .species-label.visible {
+      opacity: 1;
+      pointer-events: auto;           /* allow hover / touch when visible */
+    }
 
     /* ── Info box ────────────────────────────────────────────────────── */
     #info-box {
@@ -417,35 +423,36 @@ function updateInfoBoxWidth() {
   }
 }
 
-// ── Button init: colors + desktop hover + mobile long-press ──────────────────
+// ── Button init: colors + desktop hover on label + mobile long-press on label ─
 for (const sp of SPECIES) {
   const btn = document.getElementById(`btn-${sp.key}`);
   const lbl = document.getElementById(`label-${sp.key}`);
-  const row = document.getElementById(`row-${sp.key}`);
   btn.style.borderColor = sp.color;
   btn.style.color       = sp.color;
   lbl.style.color       = sp.color;
 
-  // Desktop: hover on row shows info box; click toggles species
-  row.addEventListener('mouseenter', () => showInfo(sp.key));
-  row.addEventListener('mouseleave', hideInfo);
+  // Button icon: click to toggle species (desktop + mobile)
   btn.addEventListener('click', () => selectSpecies(sp.key));
 
-  // Mobile: long-press (400 ms) shows info, tap toggles species
+  // Desktop: hover over latin name (only reachable when active/visible) → info box
+  lbl.addEventListener('mouseenter', () => showInfo(sp.key));
+  lbl.addEventListener('mouseleave', hideInfo);
+
+  // Mobile: long-press latin name → info box; release → hide
+  // (user-select: none on label prevents text selection interfering)
   let pressTimer = null, pressX = 0, pressY = 0, wasLong = false;
 
-  row.addEventListener('touchstart', e => {
+  lbl.addEventListener('touchstart', e => {
     wasLong = false;
     pressX  = e.touches[0].clientX;
     pressY  = e.touches[0].clientY;
     pressTimer = setTimeout(() => {
       wasLong = true;
       showInfo(sp.key);
-      if (!activeKeys.has(sp.key)) { activeKeys.add(sp.key); syncSpeciesUI(); }
     }, 400);
   }, { passive: true });
 
-  row.addEventListener('touchmove', e => {
+  lbl.addEventListener('touchmove', e => {
     if (pressTimer &&
         (Math.abs(e.touches[0].clientX - pressX) > 8 ||
          Math.abs(e.touches[0].clientY - pressY) > 8)) {
@@ -453,11 +460,10 @@ for (const sp of SPECIES) {
     }
   }, { passive: true });
 
-  row.addEventListener('touchend', e => {
+  lbl.addEventListener('touchend', e => {
     if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
-    if (wasLong) { hideInfo(); }
-    else         { selectSpecies(sp.key); }
-    e.preventDefault(); // block ghost click
+    if (wasLong) hideInfo();
+    e.preventDefault(); // suppress ghost click after long-press
   });
 }
 
