@@ -42,6 +42,9 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
     #row-german      { bottom: 178px; }
     #row-american    { bottom: 126px; }
@@ -485,7 +488,7 @@ let resetFromQ   = new THREE.Quaternion(), resetFromZ = defZ;
 
 let dragging = false, dragPx = 0, dragPy = 0;
 let velDx = 0, velDy = 0;
-const DAMPING = 0.85;
+const DAMPING = 0.92;
 
 let pinchDist0 = 0, pinchAngle0 = 0, pinchZ0 = defZ;
 let isLight = false;
